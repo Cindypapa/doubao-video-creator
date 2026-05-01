@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-豆包视频创作助手 - 核心功能模块 v2.0
+豆包视频创作助手 - 核心功能模块 v3.0
 火山引擎 Doubao Seedance 视频生成
 支持文生视频和图生视频两种模式
+
+v3.0 更新 (2026-04-28):
+- 默认时长从 5 秒改为 10 秒
+- 支持用户选择时长（10 秒或 15 秒）
+- 支持用户选择模型版本（1.0/1.5/2.0）
+- API 格式使用 content[]（已验证通过）
 """
 
 import requests
@@ -18,31 +24,49 @@ BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 TEMP_DIR = "/root/.openclaw/workspace/doubao-video-temp"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+# 默认 API Key
+# 从环境变量或配置文件读取，禁止硬编码
+DEFAULT_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
+
+# 可用模型列表
+AVAILABLE_MODELS = {
+    "2.0": "doubao-seedance-2-0-260128",
+    "2.0-fast": "doubao-seedance-2-0-fast-260128",
+    "1.5": "doubao-seedance-1-5-pro-251215",
+    "1.0": "doubao-seedance-1-0-pro-250528",
+    "1.0-fast": "doubao-seedance-1-0-pro-fast-251015",
+}
+
+# 默认模型
+DEFAULT_MODEL = "doubao-seedance-2-0-260128"
+
 
 class DoubaoVideoCreator:
-    """豆包视频生成器"""
+    """豆包视频生成器 v3.0"""
     
-    def __init__(self, api_key: str, model_id: str = "doubao-seedance-1-5-pro-251215"):
-        self.api_key = api_key
-        self.base_url = BASE_URL
-        self.model_id = model_id
+    def __init__(self, api_key: str = None, model_id: str = None):
+        self.api_key = api_key or DEFAULT_API_KEY
+        self.model_id = model_id or DEFAULT_MODEL
         self.temp_dir = TEMP_DIR
         
-    def create_video_task(self, prompt, duration=4, resolution="720p", ratio="16:9", image_url=None):
+    def create_video_task(self, prompt, duration=10, resolution="720p", ratio="16:9",
+                         image_url=None, model=None):
         """
         创建视频生成任务
         
         Args:
             prompt: 视频描述提示词
-            duration: 时长（秒），2-12 秒
+            duration: 时长（秒），10 或 15 秒，默认 10 秒
             resolution: 分辨率 480p/720p/1080p
             ratio: 比例 16:9/9:16/1:1
             image_url: 参考图片 URL（图生视频模式，可选）
+            model: 模型 ID（可选，覆盖默认）
             
         Returns:
             task_id: 任务 ID，失败返回 None
         """
         url = f"{self.base_url}/contents/generations/tasks"
+        model_id = model or self.model_id
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -50,12 +74,13 @@ class DoubaoVideoCreator:
         }
         
         # 构建内容（支持文生视频和图生视频）
-        content = [{"type": "text", "text": prompt}]
+        content = []
         if image_url:
-            content.insert(0, {"type": "image_url", "image_url": {"url": image_url}})
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
+        content.append({"type": "text", "text": prompt})
         
         payload = {
-            "model": self.model_id,
+            "model": model_id,
             "content": content,
             "parameters": {
                 "ratio": ratio,
@@ -63,6 +88,12 @@ class DoubaoVideoCreator:
                 "watermark": False
             }
         }
+        
+        mode = "图生视频" if image_url else "文生视频"
+        print(f"🎬 创建{mode}视频任务...")
+        print(f"   模型：{model_id}")
+        print(f"   比例：{ratio} | 时长：{duration}秒")
+        print(f"   提示词：{prompt[:50]}...")
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=30)
@@ -123,13 +154,15 @@ class DoubaoVideoCreator:
             result: 完成结果，失败返回 None
         """
         print(f"⏳ 等待视频生成完成...")
+        print(f"   🕐 预计等待 1-3 分钟，最长等待 {timeout} 秒")
+        
         start_time = time.time()
         
         while time.time() - start_time < timeout:
             status, result = self.get_task_status(task_id)
             
             elapsed = time.time() - start_time
-            print(f"   状态：{status} ({elapsed:.1f}s)")
+            print(f"   [{int(elapsed)}s] 状态：{status}")
             
             if status == "succeeded":
                 print(f"✅ 视频生成完成！")
@@ -139,6 +172,8 @@ class DoubaoVideoCreator:
                 return None
             elif status == "pending":
                 print(f"   任务排队中...")
+            elif status == "running":
+                print(f"   视频生成中...")
             
             time.sleep(interval)
         
@@ -149,12 +184,15 @@ class DoubaoVideoCreator:
         """从结果中提取视频 URL"""
         if "content" in result:
             content = result["content"]
-            if isinstance(content, dict) and "video_url" in content:
-                return content["video_url"]
-            elif isinstance(content, list):
+            if isinstance(content, list) and len(content) > 0:
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "video":
-                        return item.get("url")
+                    if isinstance(item, dict):
+                        if item.get("type") == "video":
+                            return item.get("url")
+                        elif "video_url" in item:
+                            return item["video_url"]
+                        elif "url" in item:
+                            return item["url"]
         return None
     
     def download_video(self, video_url, output_path=None):
@@ -175,7 +213,7 @@ class DoubaoVideoCreator:
         print(f"📥 下载视频到：{output_path}")
         
         try:
-            response = requests.get(video_url, stream=True, timeout=60)
+            response = requests.get(video_url, stream=True, timeout=120)
             
             if response.status_code == 200:
                 with open(output_path, 'wb') as f:
@@ -196,32 +234,34 @@ class DoubaoVideoCreator:
             print(f"❌ 下载异常：{e}")
             return None
     
-    def generate_scene(self, prompt, duration=4, scene_id=1, image_path=None):
+    def generate_scene(self, prompt, duration=10, scene_id=1,
+                      image_url=None, model=None):
         """
         生成单个场景视频
         
         Args:
             prompt: 场景提示词
-            duration: 时长（秒）
+            duration: 时长（秒），10 或 15 秒
             scene_id: 场景编号
-            image_path: 参考图片路径（图生视频模式，可选）
+            image_url: 参考图片 URL（图生视频模式，可选）
+            model: 模型 ID（可选）
             
         Returns:
             (success, video_path): 是否成功和视频路径
         """
-        mode = "图生视频" if image_path else "文生视频"
-        print(f"\n🎬 生成场景 {scene_id} ({mode}): {prompt[:30]}...")
-        
-        # 如果有图片，先上传获取 URL（简化处理，假设图片已有 URL）
-        image_url = None
-        if image_path and os.path.exists(image_path):
-            # TODO: 实现图片上传获取 URL
-            # 这里暂时使用本地路径，实际需要通过 HTTP 服务器提供访问
-            image_url = f"file://{image_path}"
-            print(f"   参考图片：{image_path}")
+        if image_url:
+            mode = "图生视频"
+        else:
+            mode = "文生视频"
+            
+        print(f"\n🎬 生成场景 {scene_id} ({mode}): {prompt[:50]}...")
         
         # 创建任务
-        task_id = self.create_video_task(prompt, duration, image_url=image_url)
+        task_id = self.create_video_task(
+            prompt, duration,
+            image_url=image_url,
+            model=model
+        )
         if not task_id:
             return False, None
         
@@ -234,7 +274,10 @@ class DoubaoVideoCreator:
         video_url = self.extract_video_url(result)
         if not video_url:
             print("❌ 未找到视频 URL")
+            print(f"   响应内容：{json.dumps(result, indent=2, ensure_ascii=False)}")
             return False, None
+        
+        print(f"   视频 URL：{video_url}")
         
         # 下载视频
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -251,11 +294,9 @@ def main():
     """测试函数"""
     creator = DoubaoVideoCreator()
     
-    # 测试提示词
+    # 测试文生视频
     prompt = "一只可爱的小猫在草地上玩耍，阳光明媚，微风吹拂，高清写实风格"
-    
-    # 生成视频
-    success, video_path = creator.generate_scene(prompt, duration=5, scene_id=1)
+    success, video_path = creator.generate_scene(prompt, duration=10, scene_id=1)
     
     if success:
         print(f"\n🎉 视频生成成功！")

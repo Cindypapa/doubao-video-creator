@@ -17,7 +17,7 @@
   },
   
   "api_config": {
-    "api_key": "65ae8f92-134c-4194-a3af-6e6cb74284e0",
+    "api_key": "",
     "text_to_video_model": "doubao-seedance-2-0-pro",
     "image_to_video_model": "doubao-seedance-1-5-pro",
     "configured_at": "2026-03-31T12:00:00"

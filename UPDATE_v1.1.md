@@ -176,12 +176,12 @@ doubao-video-projects/
 
 ### API 调用
 - **通义万相**（图片生成）
-  - API Key: `sk-d05aba5a2dae4453b97ed07fdb983e5a`
+  - API Key: `<YOUR_BAILIAN_API_KEY>`
   - 脚本：`wanxiang_generate.py`
   - 成本：约 ¥0.05-0.10/张
 
 - **豆包 Seedance**（视频生成）
-  - API Key: `65ae8f92-134c-4194-a3af-6e6cb74284e0`
+  - API Key: `<YOUR_DOUBAO_API_KEY>`
   - 成本：约 ¥0.15-0.50/场景
 
 ---

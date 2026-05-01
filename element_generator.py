@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 关键元素参考图生成器
-使用通义万相生成人物、场景、物品的参考图
+使用通义万相 2.7 生成人物、场景、物品的参考图
+
+模型: wan2.7-image-pro (2026-04-01 上线)
+- 支持 4K 输出
+- 文字渲染更强
+- 主体一致性更好
+- 复杂指令遵循更优
 """
 
 import requests
@@ -11,7 +17,8 @@ import subprocess
 from datetime import datetime
 
 # 配置
-API_KEY = "sk-d05aba5a2dae4453b97ed07fdb983e5a"
+# 从环境变量读取，禁止硬编码
+API_KEY = os.environ.get("BAILIAN_API_KEY", "")
 WANXIANG_SCRIPT = "/root/.openclaw/workspace/wanxiang_generate.py"
 
 
